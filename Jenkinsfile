@@ -1,0 +1,54 @@
+pipeline {
+    agent any
+
+    stages {
+
+        stage('Install Dependencies') {
+            steps {
+                sh 'npm install'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh '''
+                docker build -t my-node-k8s-app:latest .
+                '''
+            }
+        }
+
+        stage('Start Minikube if not running') {
+            steps {
+                sh '''
+                if ! minikube status | grep -q "apiserver: Running"; then
+                    echo "Minikube is not running. Starting now..."
+                    minikube start --driver=docker --memory=2048 --cpus=2
+                fi
+                '''
+            }
+        }
+
+        stage('Load Image into Minikube') {
+            steps {
+                sh '''
+                minikube image load my-node-k8s-app:latest
+                '''
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                sh '''
+                minikube kubectl -- apply -f k8s/deployment.yaml
+                minikube kubectl -- apply -f k8s/service.yaml
+
+                # Restart pods to use latest image
+                minikube kubectl -- rollout restart deployment my-node-k8s-app-deployment
+
+                # Show service URL (non-blocking)
+                minikube service my-node-k8s-app-service --url
+                '''
+            }
+        }
+    }
+}
